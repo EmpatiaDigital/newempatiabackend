@@ -22,6 +22,7 @@ const sitemapRoute = require('./routes/sitemap-route');
 const triviaRoutes = require('./routes/triviaRoutes');
 const cuotasRoutes = require("./routes/cuotasRoutes");
 const tusCursosRoutes = require('./routes/tusCursosRoutes');
+const faqRoutes = require('./routes/faqRoutes');
 
 dotenv.config();
 const app = express();
@@ -86,6 +87,7 @@ app.use('/api/inscriptions', inscriptionRoutes);
 app.use('/api/trivia', triviaRoutes);
 app.use("/api/cuotas", cuotasRoutes);
 app.use('/api/pagos', pagosRoutes);
+app.use('/api/faqs', faqRoutes);
 
 // ─── Exportar para Vercel (NO usar app.listen) ────────────────────────────────
 
