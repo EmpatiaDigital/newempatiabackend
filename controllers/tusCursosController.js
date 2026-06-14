@@ -1,39 +1,33 @@
 // controllers/tusCursosController.js
-// ─────────────────────────────────────────────────────────────────────────────
-// Gestión de cursos del socio: consulta, pago con comprobante y cancelación
-// con reembolso parcial del 40 % si se cancela un día antes del inicio.
-// ─────────────────────────────────────────────────────────────────────────────
 
-const path = require('path');
-const fs = require('fs');
 const mongoose = require('mongoose');
-const multer = require('multer');
 const nodemailer = require('nodemailer');
+const { cloudinary, upload } = require('../utils/cloudinary');
 const Inscription = require('../models/Inscription');
 const CursoPago = require('../models/CursoPago');
 const Course = require('../models/Course');
 const Socio = require('../models/Socio');
 
-// ── Multer ────────────────────────────────────────────────────────────────────
-const uploadDir = path.join(__dirname, '../uploads/curso-comprobantes');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `curso-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
-  },
-});
-
-const fileFilter = (_req, file, cb) => {
-  const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
-  if (allowed.includes(file.mimetype)) cb(null, true);
-  else cb(new Error('Formato inválido. Usá JPG, PNG, WEBP o PDF.'));
-};
-
-const upload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+// ── Multer (memoria, vía utils/cloudinary) ────────────────────────────────────
 exports.uploadMiddleware = upload.single('comprobante');
+
+// Helper: sube un buffer a Cloudinary y devuelve el resultado
+function subirBufferACloudinary(buffer, mimetype) {
+  return new Promise((resolve, reject) => {
+    const resourceType = mimetype === 'application/pdf' ? 'raw' : 'image';
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'curso-comprobantes',
+        resource_type: resourceType,
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+}
 
 // ── Mailer ────────────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -275,7 +269,9 @@ exports.subirComprobanteCurso = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Inscripción no encontrada' });
     }
 
-    const comprobanteUrl = `/uploads/curso-comprobantes/${req.file.filename}`;
+    // Subir el comprobante a Cloudinary desde el buffer (sin filesystem)
+    const resultado = await subirBufferACloudinary(req.file.buffer, req.file.mimetype);
+    const comprobanteUrl = resultado.secure_url;
 
     // precio en schema es String → castear a Number
     const precioDelCurso = insc.courseId?.precio ? Number(insc.courseId.precio) : 0;
@@ -371,7 +367,7 @@ exports.cancelarCurso = async (req, res) => {
         nombre:          nombreDestino,
         apellido:        apellidoDestino,
         email:           emailDestino,
-        courseName:      course?.titulo ?? 'el curso',   // ← era title
+        courseName:      course?.titulo ?? 'el curso',
         montoReembolso,
         moneda:          pago?.moneda ?? 'ARS',
       });
